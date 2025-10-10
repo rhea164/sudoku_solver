@@ -10,7 +10,7 @@ def read_sudoku_from_csv(file_path):
             puzzle.append([int(cell) if cell.strip() else 0 for cell in row])
     return puzzle
 
-puzzle = read_sudoku_from_csv('sudoku.csv')
+puzzle = read_sudoku_from_csv('sudoku3.csv')
 for row in puzzle:
     print (row)
     
@@ -129,6 +129,11 @@ def display_sudoku(grid):
             label = tk.Label(root, width=2, font=('Arial', 24), borderwidth=1,justify='center', text=cell_value, relief ='solid')
             label.grid(row=i, column=j, padx=5, pady=5)
             labels[i][j]= label
+            
+      # Call the solver here
+    domains = initialize_domains(grid)
+    solve_sudoku(grid, domains, labels, root)
+    
     root.mainloop()
     
 display_sudoku(puzzle)
