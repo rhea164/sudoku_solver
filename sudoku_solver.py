@@ -1,5 +1,6 @@
 import csv
 import tkinter as tk
+import time
 
 def read_sudoku_from_csv(file_path):
     """Reads a Sudoku puzzle from a CSV file and returns it as a 2D list."""
@@ -10,7 +11,7 @@ def read_sudoku_from_csv(file_path):
             puzzle.append([int(cell) if cell.strip() else 0 for cell in row])
     return puzzle
 
-puzzle = read_sudoku_from_csv('sudoku3.csv')
+puzzle = read_sudoku_from_csv('sudoku.csv')
 for row in puzzle:
     print (row)
     
@@ -32,46 +33,66 @@ def is_valid_placement(num, grid, row, col):
                 return False
     return True
     
-def initialize_domains(grid):
-    domains=[]
-    for i in range(9):
-        row_domain=[]
-        for j in range(9):
-            domain = set()
-            if grid[i][j]!=0:
-                domain.add(grid[i][j])
-            else:
-                for num in range(1,10):
-                    if is_valid_placement(num,grid,i,j):
-                        domain.add(num)
-            row_domain.append(domain)
-        domains.append(row_domain)
-    return domains
+# def initialize_domains(grid):
+#     domains=[]
+#     for i in range(9):
+#         row_domain=[]
+#         for j in range(9):
+#             domain = set()
+#             if grid[i][j]!=0:
+#                 domain.add(grid[i][j])
+#             else:
+#                 for num in range(1,10):
+#                     if is_valid_placement(num,grid,i,j):
+#                         domain.add(num)
+#             row_domain.append(domain)
+#         domains.append(row_domain)
+#     return domains
 
-def forward_checking(grid, row, col, value, domains):
-    pruned=[]
-    # Update the grid
+def problem_empty_cell(grid, row, col, value):
+    # temporarily place the value in the cell
     grid[row][col] = value
-    # Update the domains of related cells
+    
     for j in range(9):
-        if j != col and value in domains[row][j]:
-            domains[row][j].remove(value)
-            pruned.append((row, j, value))
+        if grid[row][j]==0:
+            has_option=False
+            for test_num in range(1,10):
+                if is_valid_placement(test_num,grid,row,j):
+                    has_option=True
+                    break
+            if not has_option:
+                grid[row][col]=0
+                return True
+    
     for i in range(9):
-        if i != row and value in domains[i][col]:
-            domains[i][col].remove(value)
-            pruned.append((i, col, value))
+        if grid[i][col]==0:
+            has_option=False
+            for test_num in range(1,10):
+                if is_valid_placement(test_num,grid,i,col):
+                    has_option=True
+                    break
+            if not has_option:
+                grid[row][col]=0
+                return True
+            
     box_row_start = (row // 3) * 3
     box_col_start = (col // 3) * 3
-    for i in range(box_row_start, box_row_start + 3):
+    for i in range(box_row_start, box_row_start + 3):   
         for j in range(box_col_start, box_col_start + 3):
-            if (i != row or j != col) and value in domains[i][j]:
-                domains[i][j].remove(value)
-                pruned.append((i, j, value))
-    return pruned
-
-domains = initialize_domains(puzzle)
-print(domains[0][2]) 
+            if grid[i][j]==0:
+                has_option=False
+                for test_num in range(1,10):
+                    if is_valid_placement(test_num,grid,i,j):
+                        has_option=True
+                        break
+                if not has_option:
+                    grid[row][col]=0
+                    return True
+                
+    # after checking the temporary placement and finding no problems, remove the temporary placement
+    grid[row][col]=0
+    # no problems found so return false
+    return False
 
 
 def find_empty_cell(grid):
@@ -81,29 +102,39 @@ def find_empty_cell(grid):
                 return (i, j)  # row, col
     return None
 
-def restore_domains(domains, pruned):
-    for (i, j, val) in pruned:
-        domains[i][j].add(val)
         
-def solve_sudoku(grid, domains, labels, root):
+def solve_sudoku(grid, labels, root, update_counter=[0]):
     empty_cell = find_empty_cell(grid)
     if not empty_cell:
-        return True  # Solved
+        return True
     row, col = empty_cell
-    for value in list(domains[row][col]):
-        if is_valid_placement(value, grid, row, col):
-            pruned = forward_checking(grid, row, col, value, domains)
-            labels[row][col].config(text=str(value), fg='blue')
-            root.update()
-            root.after(100)  # Pause for visual effect
-            if solve_sudoku(grid, domains, labels, root):
-                return True
-            # Backtrack
-            grid[row][col] = 0
-            restore_domains(domains, pruned)
-            labels[row][col].config(text='', fg='black')
-            root.update()
-            root.after(100)  # Pause for visual effect
+    
+    for num in range(1,10):
+        if is_valid_placement(num,grid,row,col):
+            if not problem_empty_cell(grid,row,col,num):
+                grid[row][col]=num
+                update_counter[0] += 1
+                
+                # Update every 10 moves
+                if update_counter[0] % 10 == 0:
+                    for i in range(9):
+                        for j in range(9):
+                            labels[i][j].config(text=str(grid[i][j]) if grid[i][j] != 0 else '')
+                    root.update()
+                
+                if solve_sudoku(grid,labels,root, update_counter):
+                    return True
+                
+                grid[row][col]=0
+                update_counter[0] += 1
+                
+                # Update every 10 moves during backtrack too
+                if update_counter[0] % 10 == 0:
+                    for i in range(9):
+                        for j in range(9):
+                            labels[i][j].config(text=str(grid[i][j]) if grid[i][j] != 0 else '')
+                    root.update()
+    
     return False
 
 
@@ -131,8 +162,13 @@ def display_sudoku(grid):
             labels[i][j]= label
             
       # Call the solver here
-    domains = initialize_domains(grid)
-    solve_sudoku(grid, domains, labels, root)
+    solve_sudoku(grid, labels, root)
+    
+    # After solving, update all labels to show the final solution
+    for i in range(9):
+        for j in range(9):
+            labels[i][j].config(text=str(grid[i][j]) if grid[i][j] != 0 else '', fg='black')
+    root.update()
     
     root.mainloop()
     
