@@ -11,7 +11,7 @@ def read_sudoku_from_csv(file_path):
             puzzle.append([int(cell) if cell.strip() else 0 for cell in row])
     return puzzle
 
-puzzle = read_sudoku_from_csv('sudoku.csv')
+puzzle = read_sudoku_from_csv('sudoku3.csv')
 for row in puzzle:
     print (row)
     
@@ -103,7 +103,7 @@ def find_empty_cell(grid):
     return None
 
         
-def solve_sudoku(grid, labels, root, update_counter=[0]):
+def solve_sudoku(grid, labels, stats, root, update_counter=[0]):
     empty_cell = find_empty_cell(grid)
     if not empty_cell:
         return True
@@ -113,6 +113,7 @@ def solve_sudoku(grid, labels, root, update_counter=[0]):
         if is_valid_placement(num,grid,row,col):
             if not problem_empty_cell(grid,row,col,num):
                 grid[row][col]=num
+                stats['steps'] += 1
                 update_counter[0] += 1
                 
                 # Update every 10 moves
@@ -122,10 +123,11 @@ def solve_sudoku(grid, labels, root, update_counter=[0]):
                             labels[i][j].config(text=str(grid[i][j]) if grid[i][j] != 0 else '')
                     root.update()
                 
-                if solve_sudoku(grid,labels,root, update_counter):
+                if solve_sudoku(grid,labels,stats, root, update_counter):
                     return True
                 
                 grid[row][col]=0
+                stats['backtracks'] += 1
                 update_counter[0] += 1
                 
                 # Update every 10 moves during backtrack too
@@ -136,12 +138,6 @@ def solve_sudoku(grid, labels, root, update_counter=[0]):
                     root.update()
     
     return False
-
-
-# def get_domain(grid,row,col):
-#     for i in range(1,10):
-#         if is_valid_placement(i,grid,row,col):
-
 
 def display_sudoku(grid):
     root = tk.Tk()
@@ -161,8 +157,34 @@ def display_sudoku(grid):
             label.grid(row=i, column=j, padx=5, pady=5)
             labels[i][j]= label
             
-      # Call the solver here
-    solve_sudoku(grid, labels, root)
+    # Create stats labels below the grid
+    time_label = tk.Label(root, text="Time: Calculating...", font=('Arial', 12))
+    time_label.grid(row=9, column=0, columnspan=9, pady=10)
+    
+    steps_label = tk.Label(root, text="Steps: 0", font=('Arial', 12))
+    steps_label.grid(row=10, column=0, columnspan=9, pady=5)
+    
+    backtracks_label = tk.Label(root, text="Backtracks: 0", font=('Arial', 12))
+    backtracks_label.grid(row=11, column=0, columnspan=9, pady=5)
+    
+    stats = {
+        'steps': 0,
+        'backtracks': 0
+    }
+        
+    
+    start_time = time.time()
+            
+      # Call the solver 
+    solve_sudoku(grid, labels, stats, root)
+    
+    end_time = time.time()
+    total_time = end_time - start_time
+    
+    # update time label with total time
+    time_label.config(text=f"Total Execution Time: {total_time:.2f} seconds")
+    steps_label.config(text=f"Total Steps: {stats['steps']}")
+    backtracks_label.config(text=f"Total Backtracks: {stats['backtracks']}")
     
     # After solving, update all labels to show the final solution
     for i in range(9):
