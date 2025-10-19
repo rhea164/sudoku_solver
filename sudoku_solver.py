@@ -182,8 +182,6 @@ def solve_with_dfs(candidates, grid, entries, stats, root, original_cells):
     col = pos % 9    # remainder for which column (0–8)
 
     # Listing all possible digits (bit options)
-    # work it out for an example candidates[pos] with Rhea 0b001010101
-
     options = []
     for d in range(9):
         bit = 1 << d # d moves from 0-8
