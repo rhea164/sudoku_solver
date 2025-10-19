@@ -150,7 +150,7 @@ def propagate_value(candidates, cell_index, value_mask):
     return True
 
 # Depth-First Search Sudoku Solver 
-def solve_with_dfs(candidates, grid, labels, stats, root):
+def solve_with_dfs(candidates, grid, entries, stats, root, original_cells):
     # Checking if every cell is solved (1 bit per cell)
     puzzle_solved = True
 
@@ -165,6 +165,13 @@ def solve_with_dfs(candidates, grid, labels, stats, root):
     if puzzle_solved:
         for i in range(size):
             grid[i] = candidates[i].bit_length() # how many places to shift left to reach the ‘1’ bit.
+            # Update the GUI with correct colors for final solution
+            row = i // 9
+            col = i % 9
+            if not original_cells[row][col]:  # Only color non-original cells blue
+                entries[row][col].delete(0, tk.END)
+                entries[row][col].insert(0, str(grid[i]))
+                entries[row][col].config(fg='blue')
         return True
 
     # Picking the next most constrained cell (MRV)
@@ -195,20 +202,21 @@ def solve_with_dfs(candidates, grid, labels, stats, root):
             stats['steps'] += 1
             grid[pos] = bitmask.bit_length()  # convert bitmask → digit (1–9)
             # Update GUI
-            labels[row][col].config(text=str(grid[pos]), fg='blue')
+            entries[row][col].delete(0, tk.END)
+            entries[row][col].insert(0, str(grid[pos]))
+            entries[row][col].config(fg='blue')
             root.update()
             root.after(10)
 
             # Recursively going deeper
-            if solve_with_dfs(cand_copy, grid, labels, stats, root):
+            if solve_with_dfs(cand_copy, grid, entries, stats, root, original_cells):
                 candidates[:] = cand_copy
                 return True  # solved the puzzle completely
             
         stats['backtracks'] += 1
         grid[pos] = 0
         
-        # Update GUI for backtracking
-        labels[row][col].config(text='', fg='red')
+       
         root.update()
         root.after(10)
         
@@ -358,10 +366,13 @@ def display_sudoku():
     
     # Start with an empty grid
     grid = [[0]*9 for _ in range(9)]
+    
+    # Track original cells - initialize all as False
+    original_cells = [[False]*9 for _ in range(9)]
 
    
     # Display information that original = black and solved = blue
-    info_label = tk.Label(root, text="Original: Black, Solved: Blue, Backtrack: Red", 
+    info_label = tk.Label(root, text="Original: Black, Solved: Blue", 
                          font=('Arial', 14))
     info_label.pack(pady=5)
     
@@ -382,9 +393,9 @@ def display_sudoku():
             row_frames.append(subgrid_frame)
         subgrid_frames.append(row_frames)
         
-    labels = []    
+    entries = []    
     for i in range(9):
-        row_labels = []
+        row_entries = []
         for j in range(9):
             value = grid[i][j]
             cell_value = '' if value == 0 else str(value)
@@ -394,11 +405,15 @@ def display_sudoku():
             cell_i = i % 3
             cell_j = j % 3
             subgrid_frame = subgrid_frames[subgrid_i][subgrid_j]
-            label = tk.Label(subgrid_frame, text=cell_value, width=4, height=2, 
-                           font=('Arial', 18), bg='white', fg='black')
-            label.grid(row=cell_i, column=cell_j, padx=1, pady=1)
-            row_labels.append(label)
-        labels.append(row_labels)
+            
+            # Create Entry widget instead of Label
+            entry = tk.Entry(subgrid_frame, width=3, justify="center",
+                            font=('Arial', 18), bg='white', fg='black',
+                            borderwidth=1, relief='solid')
+            entry.insert(0, cell_value)
+            entry.grid(row=cell_i, column=cell_j, padx=1, pady=1, ipadx=5, ipady=5)
+            row_entries.append(entry)
+        entries.append(row_entries)
         
     stats = {
         'steps': 0,
@@ -423,6 +438,11 @@ def display_sudoku():
     button_frame.pack(pady=10)
         
     def start_solving():
+        # Read current values from entries
+        for i in range(9):
+            for j in range(9):
+                value = entries[i][j].get().strip()
+                grid[i][j] = int(value) if value.isdigit() and 1 <= int(value) <= 9 else 0
         # Convert 2D grid to 1D for the bitset solver
         flat_grid = []
         for i in range(9):
@@ -437,7 +457,7 @@ def display_sudoku():
         candidates = init_candidates(flat_grid[:])
         
         # Call the new solver
-        solve_with_dfs(candidates, flat_grid, labels, stats, root)
+        solve_with_dfs(candidates, flat_grid, entries, stats, root, original_cells)
         
         # Convert back to 2D grid for display
         for i in range(9):
@@ -450,8 +470,10 @@ def display_sudoku():
         # Update final display
         for i in range(9):
             for j in range(9):
-                labels[i][j].config(text=str(grid[i][j]) if grid[i][j] != 0 else '', 
-                                  fg='blue' if grid[i][j] != 0 else 'black')
+                entries[i][j].delete(0, tk.END)
+                if grid[i][j] != 0:
+                    entries[i][j].insert(0, str(grid[i][j]))
+                # entries[i][j].config(fg='blue' if grid[i][j] != 0 else 'black')
         
         # Update stats
         time_label.config(text=f"Total Execution Time: {total_time:.2f} seconds")
@@ -466,7 +488,10 @@ def display_sudoku():
         for i in range(9):
             for j in range(9):
                 value = grid[i][j]
-                labels[i][j].config(text=str(value) if value != 0 else '', fg='black')
+                entries[i][j].delete(0, tk.END)
+                if value != 0:
+                    entries[i][j].insert(0, str(value))
+                entries[i][j].config(fg='black')
         
         stats['steps'] = 0
         stats['backtracks'] = 0
@@ -487,16 +512,28 @@ def display_sudoku():
                 if len(row) != 9:
                     messagebox.showerror("Error", "Invalid Sudoku format - each row must have 9 columns")
                     return
+                
+            # Set which cells are originally filled
+            for i in range(9):
+                for j in range(9):
+                    original_cells[i][j] = (puzzle[i][j] != 0)
             initialise_puzzle(puzzle)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load file: {str(e)}")
-    
+            
     def reset_puzzle():
-        # Clear the current puzzle
+        # Reload the original puzzle state
         for i in range(9):
             for j in range(9):
-                grid[i][j] = 0
-                labels[i][j].config(text='', fg='black')
+                if original_cells[i][j]:  # If it was an original cell
+                    entries[i][j].delete(0, tk.END)
+                    entries[i][j].insert(0, str(grid[i][j]))
+                    entries[i][j].config(fg='black')
+                else:  # If it was filled during solving
+                    grid[i][j] = 0
+                    entries[i][j].delete(0, tk.END)
+                    entries[i][j].config(fg='black')
+        
         stats['steps'] = 0
         stats['backtracks'] = 0
         steps_label.config(text="Steps: 0")
