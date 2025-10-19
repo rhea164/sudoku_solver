@@ -18,8 +18,7 @@ size = N * N # Number of cells
 # Same row, same column, same box
 PEERS = []
 
-# Question for Rhea: How many peers can a cell have and how?
-# ((Add the answer and working here after the discussion))
+# Each cell has up to 20 peers (8 in row + 8 in column + 4 in box, minus overlaps)
 # Hint (Visualizing it): 
 # Consider cell X and it's peers Y
 # 0 0 0 | 0 0 0 | 0 0 0             0 0 0 | 0 Y 0 | 0 0 0
@@ -216,148 +215,23 @@ def solve_with_dfs(candidates, grid, entries, stats, root, original_cells):
         stats['backtracks'] += 1
         grid[pos] = 0
         
-       
+       # Update GUI to remove the number (backtrack)
         root.update()
         root.after(10)
         
-
-        # # If that number caused a contradiction, then backtrack
-        # ui.stats['backtracks'] += 1
-        # grid[pos] = 0
-        # ui.animate_cell(row, col, "#ef4444")  # red outline (backtrack)
-
     # No number worked then dead end so return False
     return False
-
-
-# # ---------- GUI ----------
-# class SudokuGUI:
-#     def __init__(self):
-#         self.root=tk.Tk()
-#         self.root.title("Sudoku Solver  –  Bitset + MRV + Forward Checking")
-#         self.root.configure(bg="#ffffff")   # bright white background
-#         self.cells=[[None]*9 for _ in range(9)]
-#         self.entries=[[0]*9 for _ in range(9)]
-#         self.stats={'steps':0,'backtracks':0}
-#         self.build_ui()
-#         self.root.mainloop()
-
-#     def build_ui(self):
-#         outer=tk.Frame(self.root,bg="#000000",bd=4,relief="solid")  # strong outer border
-#         outer.pack(padx=15,pady=15)
-#         grid_frame=tk.Frame(outer,bg="#000000")
-#         grid_frame.pack()
-
-#         self.make_grid(grid_frame)
-
-#         self.stat_lbl=tk.Label(self.root,text="",font=("Arial",12),bg="#ffffff")
-#         self.stat_lbl.pack(pady=(4,10))
-
-#         btns=tk.Frame(self.root,bg="#ffffff")
-#         btns.pack()
-#         tk.Button(btns,text="Open File",command=self.load_file,width=12,bg="#e5e5e5").grid(row=0,column=0,padx=5)
-#         tk.Button(btns,text="Solve",command=self.solve,width=12,bg="#d1fae5").grid(row=0,column=1,padx=5)
-#         tk.Button(btns,text="Clear",command=self.clear,width=12,bg="#fee2e2").grid(row=0,column=2,padx=5)
-
-#     def make_grid(self,frame):
-#         for r in range(N):
-#             for c in range(N):
-#                 # Bold lines every 3rd cell
-#                 top = 2 if r % 3 == 0 else 1
-#                 left = 2 if c % 3 == 0 else 1
-#                 bottom = 2 if r == 8 else 0
-#                 right = 2 if c == 8 else 0
-
-#                 # Soft pastel alternating 3×3 backgrounds
-#                 bg_color = "#fff9e6" if ((r//3 + c//3) % 2 == 0) else "#ffffff"
-
-#                 e = tk.Entry(frame, width=3, justify="center",
-#                              font=("Helvetica",22,"bold"),
-#                              relief="solid", bd=0,
-#                              highlightthickness=2,
-#                              highlightbackground="#000",
-#                              highlightcolor="#000",
-#                              bg=bg_color, disabledbackground=bg_color)
-#                 e.grid(row=r,column=c,ipadx=2,ipady=2,
-#                        padx=(left,right),pady=(top,bottom))
-#                 e.bind("<KeyRelease>",lambda ev,rr=r,cc=c:self.on_type(ev,rr,cc))
-#                 self.cells[r][c]=e
-
-#     def on_type(self,event,r,c):
-#         val=event.widget.get().strip()
-#         if val.isdigit() and 1<=int(val)<=9:
-#             self.entries[r][c]=int(val)
-#         elif val=="":
-#             self.entries[r][c]=0
-#         else:
-#             event.widget.delete(0,"end")
-
-#     def clear(self):
-#         for r in range(9):
-#             for c in range(9):
-#                 self.entries[r][c]=0
-#                 self.cells[r][c].delete(0,"end")
-#                 self.cells[r][c].config(highlightbackground="#000",highlightcolor="#000")
-#         self.stat_lbl.config(text="")
-
-#     def load_file(self):
-#         f=filedialog.askopenfilename(filetypes=[("CSV/TXT","*.csv *.txt")])
-#         if not f: return
-#         grid=[]
-#         with open(f) as file:
-#             reader=csv.reader(file,delimiter=",")
-#             for row in reader:
-#                 nums=[int(x) if x.strip() else 0 for x in row]
-#                 if len(nums)==9: grid.append(nums)
-#         if len(grid)!=9:
-#             messagebox.showerror("Error","Invalid Sudoku format"); return
-#         for r in range(9):
-#             for c in range(9):
-#                 v=grid[r][c]
-#                 self.entries[r][c]=v
-#                 self.cells[r][c].delete(0,"end")
-#                 if v: self.cells[r][c].insert(0,str(v))
-
-#     def get_grid_flat(self):
-#         return [self.entries[r][c] for r in range(9) for c in range(9)]
-
-#     def animate_cell(self,r,c,color):
-#         cell=self.cells[r][c]
-#         cell.config(highlightbackground=color,highlightcolor=color)
-#         self.root.update_idletasks()
-#         self.root.after(5)
-
-#     def solve(self):
-#         grid=self.get_grid_flat()
-#         cand=init_candidates(grid[:])
-#         start=time.time()
-#         self.stats={'steps':0,'backtracks':0}
-#         solve_with_dfs(cand,grid,self)
-#         end=time.time()
-#         for i,v in enumerate(grid):
-#             r,c=divmod(i,9)
-#             self.cells[r][c].delete(0,"end")
-#             self.cells[r][c].insert(0,str(v))
-#             self.cells[r][c].config(highlightbackground="#000",highlightcolor="#000")
-#         self.stat_lbl.config(
-#             text=f"Steps: {self.stats['steps']}   "
-#                  f"Backtracks: {self.stats['backtracks']}   "
-#                  f"Time: {end-start:.3f}s")
-
-# if __name__=="__main__":
-#     SudokuGUI()
 
 # GUI code separated below
 
 def read_sudoku_from_csv(file_path):
-    """Reads a Sudoku puzzle from a CSV file and returns it as a 2D list."""
+    # reads a sudoku puzzle from a csv file and returns it as a 2D list
     with open(file_path, 'r') as csvfile:
         reader = csv.reader(csvfile)
         puzzle = []
         for row in reader:
             puzzle.append([int(cell) if cell.strip() else 0 for cell in row])
     return puzzle
-
 
 
 def display_sudoku():
@@ -384,21 +258,24 @@ def display_sudoku():
     grid_frame = tk.Frame(main_frame, borderwidth=1, relief='solid', bg='black')
     grid_frame.pack(pady=10)
     
+    # create 3x3 subgrid frames
     subgrid_frames = []
     for box_i in range(3):
         row_frames = []
         for box_j in range(3):
+            # give each subgrid a border
             subgrid_frame = tk.Frame(grid_frame, borderwidth=1, relief='solid', bg='black')
             subgrid_frame.grid(row=box_i, column=box_j, padx=1, pady=1)
             row_frames.append(subgrid_frame)
         subgrid_frames.append(row_frames)
         
-    entries = []    
+    # Create Entry widgets for each cell in the grid
+    entries = []     
     for i in range(9):
         row_entries = []
         for j in range(9):
             value = grid[i][j]
-            cell_value = '' if value == 0 else str(value)
+            cell_value = '' if value == 0 else str(value) 
             
             subgrid_i = i // 3
             subgrid_j = j // 3
@@ -406,7 +283,7 @@ def display_sudoku():
             cell_j = j % 3
             subgrid_frame = subgrid_frames[subgrid_i][subgrid_j]
             
-            # Create Entry widget instead of Label
+            # Create Entry widget for each cell
             entry = tk.Entry(subgrid_frame, width=3, justify="center",
                             font=('Arial', 18), bg='white', fg='black',
                             borderwidth=1, relief='solid')
@@ -456,13 +333,13 @@ def display_sudoku():
         # Initialize candidates and solve using the bitset solver
         candidates = init_candidates(flat_grid[:])
         
-        # Call the new solver
+        # Call the DFS solver
         solve_with_dfs(candidates, flat_grid, entries, stats, root, original_cells)
         
         # Convert back to 2D grid for display
         for i in range(9):
             for j in range(9):
-                grid[i][j] = flat_grid[i * 9 + j]
+                grid[i][j] = flat_grid[i * 9 + j] 
         
         end_time = time.time()
         total_time = end_time - start_time
@@ -470,10 +347,9 @@ def display_sudoku():
         # Update final display
         for i in range(9):
             for j in range(9):
-                entries[i][j].delete(0, tk.END)
+                entries[i][j].delete(0, tk.END) # Clear existing entry to prevent user input from mixing with the solution
                 if grid[i][j] != 0:
-                    entries[i][j].insert(0, str(grid[i][j]))
-                # entries[i][j].config(fg='blue' if grid[i][j] != 0 else 'black')
+                    entries[i][j].insert(0, str(grid[i][j])) # Insert solved value
         
         # Update stats
         time_label.config(text=f"Total Execution Time: {total_time:.2f} seconds")
@@ -482,16 +358,17 @@ def display_sudoku():
         
     def initialise_puzzle(puzzle):
         grid.clear()
+        # Load the puzzle into the grid
         for row in puzzle:
             grid.append([cell for cell in row])
             
         for i in range(9):
             for j in range(9):
-                value = grid[i][j]
-                entries[i][j].delete(0, tk.END)
+                value = grid[i][j] 
+                entries[i][j].delete(0, tk.END) # Clear existing entry, may be from previous puzzle or user input
                 if value != 0:
-                    entries[i][j].insert(0, str(value))
-                entries[i][j].config(fg='black')
+                    entries[i][j].insert(0, str(value)) # Insert the puzzle value in the respective cell
+                entries[i][j].config(fg='black') 
         
         stats['steps'] = 0
         stats['backtracks'] = 0
@@ -499,25 +376,26 @@ def display_sudoku():
         backtracks_label.config(text="Backtracks: 0")
         time_label.config(text="Time: Click Start to Solve")
         
-    def load_file():
-        f = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv"), ("Text files", "*.txt")])
-        if not f: 
+    def load_file(): 
+        # Open file dialog to select a CSV file
+        f = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
+        if not f: # User cancelled file dialog
             return
         try:
-            puzzle = read_sudoku_from_csv(f)
-            if len(puzzle) != 9:
+            puzzle = read_sudoku_from_csv(f) # Read the puzzle from the selected file
+            if len(puzzle) != 9: # Validate the puzzle format
                 messagebox.showerror("Error", "Invalid Sudoku format - must have 9 rows")
                 return
             for row in puzzle:
-                if len(row) != 9:
+                if len(row) != 9: # Validate each row
                     messagebox.showerror("Error", "Invalid Sudoku format - each row must have 9 columns")
                     return
                 
             # Set which cells are originally filled
             for i in range(9):
                 for j in range(9):
-                    original_cells[i][j] = (puzzle[i][j] != 0)
-            initialise_puzzle(puzzle)
+                    original_cells[i][j] = (puzzle[i][j] != 0) # True if original cell, False otherwise
+            initialise_puzzle(puzzle) # Initialize the puzzle in the GUI
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load file: {str(e)}")
             
@@ -526,13 +404,12 @@ def display_sudoku():
         for i in range(9):
             for j in range(9):
                 if original_cells[i][j]:  # If it was an original cell
-                    entries[i][j].delete(0, tk.END)
-                    entries[i][j].insert(0, str(grid[i][j]))
+                    entries[i][j].delete(0, tk.END) # Clear existing entry
+                    entries[i][j].insert(0, str(grid[i][j])) # Reinsert original value
                     entries[i][j].config(fg='black')
                 else:  # If it was filled during solving
                     grid[i][j] = 0
-                    entries[i][j].delete(0, tk.END)
-                    entries[i][j].config(fg='black')
+                    entries[i][j].delete(0, tk.END) # Clear the cell
         
         stats['steps'] = 0
         stats['backtracks'] = 0
