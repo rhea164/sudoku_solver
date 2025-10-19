@@ -313,6 +313,9 @@ def display_sudoku():
     button_frame.pack(pady=10)
         
     def start_solving():
+        # Hide start button and show reset button
+        start_button.pack_forget()
+        reset_button.pack(side='left', padx=10)
         # Read current values from entries
         for i in range(9):
             for j in range(9):
@@ -398,6 +401,10 @@ def display_sudoku():
             messagebox.showerror("Error", f"Failed to load file: {str(e)}")
             
     def reset_puzzle():
+        # Hide reset button and show start button
+        reset_button.pack_forget()
+        start_button.pack(side='left', padx=10)
+        
         # Reload the original puzzle state
         for i in range(9):
             for j in range(9):
@@ -426,6 +433,7 @@ def display_sudoku():
     # Reset button
     reset_button = tk.Button(button_frame, text="Reset Puzzle", command=reset_puzzle, font=('Arial', 12))
     reset_button.pack(side='left', padx=10)
+    reset_button.pack_forget()  # Hide reset button initially
     
     root.mainloop()
 
