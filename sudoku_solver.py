@@ -1,6 +1,345 @@
-import csv
-import tkinter as tk
-import time
+import csv # Lets the program read .csv files that contain Sudoku puzzles.
+import tkinter as tk # The built-in GUI library
+import time # Used to measure how long solving takes (approx.)
+
+from tkinter import filedialog, messagebox
+
+# --------------------------------------------------------------------------
+# Solver (bitset + Minimum Remaining Values + forward checking) 
+# --------------------------------------------------------------------------
+
+FULL = 0b111111111 # Each bit has the potential to represent digits 1-9, logic: switching lights ON or OFF
+N = 9 # Number of rows / columns
+size = N * N # Number of cells
+
+# The method we have used manipulates bits heavily, that is the usage of 0's and 1's 
+
+# Starting with an empty array to hold each cell's "peers", that is, the other cells it must check against
+# Same row, same column, same box
+PEERS = []
+
+# Question for Rhea: How many peers can a cell have and how?
+# ((Add the answer and working here after the discussion))
+# Hint (Visualizing it): 
+# Consider cell X and it's peers Y
+# 0 0 0 | 0 0 0 | 0 0 0             0 0 0 | 0 Y 0 | 0 0 0
+# 0 0 0 | 0 0 0 | 0 0 0             0 0 0 | 0 Y 0 | 0 0 0
+# 0 0 0 | 0 0 0 | 0 0 0             0 0 0 | 0 Y 0 | 0 0 0
+# ---------------------             ---------------------
+# 0 0 0 | 0 0 0 | 0 0 0             0 0 0 | Y Y Y | 0 0 0
+# 0 0 0 | 0 X 0 | 0 0 0    ---->    Y Y Y | Y X Y | Y Y Y 
+# 0 0 0 | 0 0 0 | 0 0 0             0 0 0 | Y Y Y | 0 0 0
+# ---------------------             ---------------------
+# 0 0 0 | 0 0 0 | 0 0 0             0 0 0 | 0 Y 0 | 0 0 0
+# 0 0 0 | 0 0 0 | 0 0 0             0 0 0 | 0 Y 0 | 0 0 0
+# 0 0 0 | 0 0 0 | 0 0 0             0 0 0 | 0 Y 0 | 0 0 0
+
+for index in range(size):
+    current_row = index // 9
+    current_column = index % 9
+    box_row_start = (current_row // 3) * 3
+    box_column_start = (current_column // 3) * 3
+
+    # All cells in the same row
+    same_row = {current_row * 9 + c for c in range(9)}
+
+    # All cells in the same column
+    same_col = {r * 9 + current_column for r in range(9)}
+
+    # All cells in the same 3x3 box
+    same_box = set()
+    for r_offset in range(3):
+        for c_offset in range(3):
+            cell_index = (box_row_start + r_offset) * 9 + (box_column_start + c_offset)
+            same_box.add(cell_index)
+
+    # Combine all peers, from Set Theory, | represents the Union function
+    all_peers = same_row | same_col | same_box
+    all_peers.discard(index) # Removing the cell itself from its peers
+    PEERS.append(tuple(all_peers)) # Adding the tuple of peers of current cell to the PEERS list
+
+# Initialize the list of possible numbers (candidates) for each Sudoku cell.
+def init_candidates(grid):
+
+    # Starting by assuming all digits (1–9) are possible for every cell, and so, we need 9x9=81 numbers
+    candidates = [FULL]*size
+    
+    # Going through each of the 81 cells one by one
+    for cell_index in range(size):
+
+        # This is the value at that particular row and column
+        value = grid[cell_index]
+
+        # If the cell is already filled in the puzzle, that is if it has been allotted from 1-9
+        if value != 0:
+            # Converting the value into a bitmask, by shifting 1 into correct position
+            # ex: to denote 5 → 0b000010000, that is 5th number from the right is turned on
+            # and for this it should be shifted from (5-1) = 4 shifts from the right
+            bitmask = 1 << (value - 1)
+
+            # Locking this cell’s candidates to that number
+            candidates[cell_index] = bitmask
+
+            # Now, we are removing this number from all its peers (same row, col, or box)
+            for peer_index in PEERS[cell_index]:
+                # Using bitwise AND and NOT to clear that bit
+                # Example: if bitmask = 0b000010000,
+                # then ~bitmask = 0b111101111 (so we are actually “turning off” the 5 from peers)
+                candidates[peer_index] &= ~bitmask
+
+    # Returning the final candidates list (each entry is a 9-bit mask)
+    return candidates
+
+# MRV - Minimum Remaining Value Heuristics
+# This function chooses the next cell to fill in Sudoku using the MRV principle.
+# Helps reduce branching in the search tree and makes solving faster.
+def choose_next_cell(candidates):
+    
+    fewest_options = 10    # start larger than any possible count (max = 9)
+    chosen_index = -1      # default if all cells are solved
+
+    # Goes through all 81 cells
+    for cell_index in range(size):
+        possibilities = candidates[cell_index].bit_count() # count the number of 1's present in value
+
+        # Skip solved cells (exactly one possibility)
+        # Also skip cells that have more possibilities than the current minimum
+        if 1 < possibilities < fewest_options:
+            # updating the fewest options with possibilities
+            # this cell has fewer options than any previous one
+            fewest_options = possibilities
+            chosen_index = cell_index
+
+            # 2 possibilities is already very constrained so break out of loop 
+            if fewest_options == 2:
+                break
+
+    #Return the index (0–80) of the most constrained unsolved cell or -1 if every cell is already filled.
+    return chosen_index
+
+def propagate_value(candidates, cell_index, value_mask):
+    
+    # Fixing this cell's candidates to only the chosen value.
+    candidates[cell_index] = value_mask
+
+    # Updating all peers (cells in the same row, column, or box)
+    for peer_index in PEERS[cell_index]:
+        
+        # Checking if the peer currently allows this number (bit overlap)
+        if candidates[peer_index] & value_mask:
+            
+            # Removing that number from the peer's candidate list
+            # Using bitwise AND with NOT (~value_mask)
+            # That is if value_mask = 0b000010000 (number 5) then ~value_mask = 0b111101111 → turns off 
+            # that bit for all it's peers
+            candidates[peer_index] &= ~value_mask
+
+            # If the peer now has no possible values then the current placement has made the puzzle invalid and we need to backtrack
+            if candidates[peer_index] == 0:
+                return False
+
+            # If the peer now has exactly one possible value left, assign it recursively to continue propagation.
+            # The condition (x & (x - 1)) == 0 checks if only one bit is set.
+            # Ex: candidates[52] = 0b000100000 AND candidates[52] - 1 = 0b000011111 gives 0b000000000
+            if candidates[peer_index] & (candidates[peer_index] - 1) == 0:
+                # if propagation fails, immediately stop and signal backtracking
+                if not propagate_value(candidates, peer_index, candidates[peer_index]):
+                    return False
+
+    # If no contradictions occurred, the assignment is consistent.
+    return True
+
+# Depth-First Search Sudoku Solver 
+def solve_with_dfs(candidates, grid, labels, stats, root):
+    # Checking if every cell is solved (1 bit per cell)
+    puzzle_solved = True
+
+    # For all masked values in candidates
+    for mask in candidates:
+        # (mask & (mask - 1)) == 0 means exactly one bit is ON
+        if mask & (mask - 1) != 0:
+            puzzle_solved = False
+            break
+
+    # If every cell was solved, fill grid with final numbers
+    if puzzle_solved:
+        for i in range(size):
+            grid[i] = candidates[i].bit_length() # how many places to shift left to reach the ‘1’ bit.
+        return True
+
+    # Picking the next most constrained cell (MRV)
+    pos = choose_next_cell(candidates)
+    if pos == -1:
+        return False  # no available cell
+
+    row = pos // 9   # integer division for which row (0–8)
+    col = pos % 9    # remainder for which column (0–8)
+
+    # Listing all possible digits (bit options)
+    # work it out for an example candidates[pos] with Rhea 0b001010101
+
+    options = []
+    for d in range(9):
+        bit = 1 << d # d moves from 0-8
+        # basically AND's and checks whether that value
+        if candidates[pos] & bit:
+            options.append(bit)
+
+    # Try assigning each possible number
+    for bitmask in options:
+        # Copy the current candidate state, without destroying any previous state
+        cand_copy = candidates[:]
+
+        # Try to assign and propagate the chosen number
+        if propagate_value(cand_copy, pos, bitmask):
+            stats['steps'] += 1
+            grid[pos] = bitmask.bit_length()  # convert bitmask → digit (1–9)
+            # Update GUI
+            labels[row][col].config(text=str(grid[pos]), fg='blue')
+            root.update()
+            root.after(10)
+
+            # Recursively going deeper
+            if solve_with_dfs(cand_copy, grid, labels, stats, root):
+                candidates[:] = cand_copy
+                return True  # solved the puzzle completely
+            
+        stats['backtracks'] += 1
+        grid[pos] = 0
+        
+        # Update GUI for backtracking
+        labels[row][col].config(text='', fg='red')
+        root.update()
+        root.after(10)
+        
+
+        # # If that number caused a contradiction, then backtrack
+        # ui.stats['backtracks'] += 1
+        # grid[pos] = 0
+        # ui.animate_cell(row, col, "#ef4444")  # red outline (backtrack)
+
+    # No number worked then dead end so return False
+    return False
+
+
+# # ---------- GUI ----------
+# class SudokuGUI:
+#     def __init__(self):
+#         self.root=tk.Tk()
+#         self.root.title("Sudoku Solver  –  Bitset + MRV + Forward Checking")
+#         self.root.configure(bg="#ffffff")   # bright white background
+#         self.cells=[[None]*9 for _ in range(9)]
+#         self.entries=[[0]*9 for _ in range(9)]
+#         self.stats={'steps':0,'backtracks':0}
+#         self.build_ui()
+#         self.root.mainloop()
+
+#     def build_ui(self):
+#         outer=tk.Frame(self.root,bg="#000000",bd=4,relief="solid")  # strong outer border
+#         outer.pack(padx=15,pady=15)
+#         grid_frame=tk.Frame(outer,bg="#000000")
+#         grid_frame.pack()
+
+#         self.make_grid(grid_frame)
+
+#         self.stat_lbl=tk.Label(self.root,text="",font=("Arial",12),bg="#ffffff")
+#         self.stat_lbl.pack(pady=(4,10))
+
+#         btns=tk.Frame(self.root,bg="#ffffff")
+#         btns.pack()
+#         tk.Button(btns,text="Open File",command=self.load_file,width=12,bg="#e5e5e5").grid(row=0,column=0,padx=5)
+#         tk.Button(btns,text="Solve",command=self.solve,width=12,bg="#d1fae5").grid(row=0,column=1,padx=5)
+#         tk.Button(btns,text="Clear",command=self.clear,width=12,bg="#fee2e2").grid(row=0,column=2,padx=5)
+
+#     def make_grid(self,frame):
+#         for r in range(N):
+#             for c in range(N):
+#                 # Bold lines every 3rd cell
+#                 top = 2 if r % 3 == 0 else 1
+#                 left = 2 if c % 3 == 0 else 1
+#                 bottom = 2 if r == 8 else 0
+#                 right = 2 if c == 8 else 0
+
+#                 # Soft pastel alternating 3×3 backgrounds
+#                 bg_color = "#fff9e6" if ((r//3 + c//3) % 2 == 0) else "#ffffff"
+
+#                 e = tk.Entry(frame, width=3, justify="center",
+#                              font=("Helvetica",22,"bold"),
+#                              relief="solid", bd=0,
+#                              highlightthickness=2,
+#                              highlightbackground="#000",
+#                              highlightcolor="#000",
+#                              bg=bg_color, disabledbackground=bg_color)
+#                 e.grid(row=r,column=c,ipadx=2,ipady=2,
+#                        padx=(left,right),pady=(top,bottom))
+#                 e.bind("<KeyRelease>",lambda ev,rr=r,cc=c:self.on_type(ev,rr,cc))
+#                 self.cells[r][c]=e
+
+#     def on_type(self,event,r,c):
+#         val=event.widget.get().strip()
+#         if val.isdigit() and 1<=int(val)<=9:
+#             self.entries[r][c]=int(val)
+#         elif val=="":
+#             self.entries[r][c]=0
+#         else:
+#             event.widget.delete(0,"end")
+
+#     def clear(self):
+#         for r in range(9):
+#             for c in range(9):
+#                 self.entries[r][c]=0
+#                 self.cells[r][c].delete(0,"end")
+#                 self.cells[r][c].config(highlightbackground="#000",highlightcolor="#000")
+#         self.stat_lbl.config(text="")
+
+#     def load_file(self):
+#         f=filedialog.askopenfilename(filetypes=[("CSV/TXT","*.csv *.txt")])
+#         if not f: return
+#         grid=[]
+#         with open(f) as file:
+#             reader=csv.reader(file,delimiter=",")
+#             for row in reader:
+#                 nums=[int(x) if x.strip() else 0 for x in row]
+#                 if len(nums)==9: grid.append(nums)
+#         if len(grid)!=9:
+#             messagebox.showerror("Error","Invalid Sudoku format"); return
+#         for r in range(9):
+#             for c in range(9):
+#                 v=grid[r][c]
+#                 self.entries[r][c]=v
+#                 self.cells[r][c].delete(0,"end")
+#                 if v: self.cells[r][c].insert(0,str(v))
+
+#     def get_grid_flat(self):
+#         return [self.entries[r][c] for r in range(9) for c in range(9)]
+
+#     def animate_cell(self,r,c,color):
+#         cell=self.cells[r][c]
+#         cell.config(highlightbackground=color,highlightcolor=color)
+#         self.root.update_idletasks()
+#         self.root.after(5)
+
+#     def solve(self):
+#         grid=self.get_grid_flat()
+#         cand=init_candidates(grid[:])
+#         start=time.time()
+#         self.stats={'steps':0,'backtracks':0}
+#         solve_with_dfs(cand,grid,self)
+#         end=time.time()
+#         for i,v in enumerate(grid):
+#             r,c=divmod(i,9)
+#             self.cells[r][c].delete(0,"end")
+#             self.cells[r][c].insert(0,str(v))
+#             self.cells[r][c].config(highlightbackground="#000",highlightcolor="#000")
+#         self.stat_lbl.config(
+#             text=f"Steps: {self.stats['steps']}   "
+#                  f"Backtracks: {self.stats['backtracks']}   "
+#                  f"Time: {end-start:.3f}s")
+
+# if __name__=="__main__":
+#     SudokuGUI()
+
+# GUI code separated below
 
 def read_sudoku_from_csv(file_path):
     """Reads a Sudoku puzzle from a CSV file and returns it as a 2D list."""
@@ -12,161 +351,18 @@ def read_sudoku_from_csv(file_path):
     return puzzle
 
 
-    
-def is_valid_placement(num, grid, row, col):
-    # Check row
-    for j in range(9):
-        if grid[row][j]==num:
-            return False
-    # Check column
-    for i in range(9):
-        if grid[i][col]==num:
-            return False
-    # Check 3x3 box
-    box_row_start = (row // 3) * 3
-    box_col_start = (col // 3) * 3
-    for i in range(box_row_start, box_row_start + 3):
-        for j in range(box_col_start, box_col_start + 3):
-            if grid[i][j]==num:
-                return False
-    return True
-    
-
-def problem_empty_cell(grid, row, col, value):
-    # temporarily place the value in the cell
-    grid[row][col] = value
-    
-    for j in range(9):
-        if grid[row][j]==0:
-            has_option=False
-            for test_num in range(1,10):
-                if is_valid_placement(test_num,grid,row,j):
-                    has_option=True
-                    break
-            if not has_option:
-                grid[row][col]=0
-                return True
-    
-    for i in range(9):
-        if grid[i][col]==0:
-            has_option=False
-            for test_num in range(1,10):
-                if is_valid_placement(test_num,grid,i,col):
-                    has_option=True
-                    break
-            if not has_option:
-                grid[row][col]=0
-                return True
-            
-    box_row_start = (row // 3) * 3
-    box_col_start = (col // 3) * 3
-    for i in range(box_row_start, box_row_start + 3):   
-        for j in range(box_col_start, box_col_start + 3):
-            if grid[i][j]==0:
-                has_option=False
-                for test_num in range(1,10):
-                    if is_valid_placement(test_num,grid,i,j):
-                        has_option=True
-                        break
-                if not has_option:
-                    grid[row][col]=0
-                    return True
-                
-    # after checking the temporary placement and finding no problems, remove the temporary placement
-    grid[row][col]=0
-    # no problems found so return false
-    return False
-
-
-def find_empty_cell(grid):
-    for i in range(9):
-        for j in range(9):
-            if grid[i][j] == 0:
-                return (i, j)  # row, col
-    return None
-
-        
-def solve_sudoku(grid, labels, stats, root):
-    empty_cell = find_empty_cell(grid)
-    if not empty_cell:
-        return True
-    row, col = empty_cell
-    
-    for num in range(1,10):
-        if is_valid_placement(num,grid,row,col):
-            if not problem_empty_cell(grid,row,col,num):
-                grid[row][col]=num
-                stats['steps'] += 1
-                labels[row][col].config(text=str(num), fg='blue')
-                root.update()
-                root.after(10) 
-                # update_counter[0] += 1
-                
-                # Update every 10 moves
-                # if update_counter[0] % 10 == 0:
-                #     for i in range(9):
-                #         for j in range(9):
-                #             labels[i][j].config(text=str(grid[i][j]) if grid[i][j] != 0 else '')
-                #     root.update()
-                
-                if solve_sudoku(grid,labels,stats, root):
-                    return True
-                
-                grid[row][col]=0
-                stats['backtracks'] += 1
-                labels[row][col].config(text='')
-                root.update()
-                root.after(10) 
-                
-                # update_counter[0] += 1
-                
-                # Update every 10 moves during backtrack too
-                # if update_counter[0] % 10 == 0:
-                #     for i in range(9):
-                #         for j in range(9):
-                #             labels[i][j].config(text=str(grid[i][j]) if grid[i][j] != 0 else '')
-                #     root.update()
-    
-    return False
-
-
-    
 
 def display_sudoku():
     root = tk.Tk()
-    root.title("Sudoku Solver")
+    root.title("Sudoku Solver - Bitset + MRV + Forward Checking")
     
-    default_puzzle = read_sudoku_from_csv('sudoku_medium.csv')
-    grid = []
-    for row in default_puzzle:
-        grid.append([cell for cell in row])
+    # Start with an empty grid
+    grid = [[0]*9 for _ in range(9)]
 
-    
-    # Create difficulty selection frame
-    diff_frame=tk.Frame(root)
-    diff_frame.pack(pady=5)
-    
-    tk.Label(diff_frame, text="Select Difficulty:",font=('Arial', 12)).pack(side='left', padx=5)
-    difficulty=tk.StringVar(value='Medium')
-    
-    def load_difficulty():
-        level=difficulty.get()
-        if level=='Easy':
-            puzzle=read_sudoku_from_csv('sudoku_easy.csv')
-        elif level=='Medium':
-            puzzle=read_sudoku_from_csv('sudoku_medium.csv')
-        elif level=='Hard':
-            puzzle=read_sudoku_from_csv('sudoku_hard.csv')
-        
-        initialise_puzzle(puzzle)
-        
-    tk.Radiobutton(diff_frame, text="Easy", variable=difficulty, value='Easy', command=load_difficulty,font=('Arial', 12)).pack(side='left', padx=5)
-    tk.Radiobutton(diff_frame, text="Medium", variable=difficulty, value='Medium', command=load_difficulty,font=('Arial', 12)).pack(side='left', padx=5)
-    tk.Radiobutton(diff_frame, text="Hard", variable=difficulty, value='Hard', command=load_difficulty,font=('Arial', 12)).pack(side='left', padx=5)
-    
-    
-    #display the information that original = black and solved = blue
-    info_label = tk.Label(root, text="Original : Black, Solved : Blue", font=('Arial', 14))
+   
+    # Display information that original = black and solved = blue
+    info_label = tk.Label(root, text="Original: Black, Solved: Blue, Backtrack: Red", 
+                         font=('Arial', 14))
     info_label.pack(pady=5)
     
     # Create main frame
@@ -186,7 +382,7 @@ def display_sudoku():
             row_frames.append(subgrid_frame)
         subgrid_frames.append(row_frames)
         
-    labels=[]    
+    labels = []    
     for i in range(9):
         row_labels = []
         for j in range(9):
@@ -198,7 +394,8 @@ def display_sudoku():
             cell_i = i % 3
             cell_j = j % 3
             subgrid_frame = subgrid_frames[subgrid_i][subgrid_j]
-            label = tk.Label(subgrid_frame, text=cell_value, width=4, height=2, font=('Arial', 18),bg='white', fg='black')
+            label = tk.Label(subgrid_frame, text=cell_value, width=4, height=2, 
+                           font=('Arial', 18), bg='white', fg='black')
             label.grid(row=cell_i, column=cell_j, padx=1, pady=1)
             row_labels.append(label)
         labels.append(row_labels)
@@ -208,7 +405,7 @@ def display_sudoku():
         'backtracks': 0
     }
     
-      # Create stats frame below the grid
+    # Create stats frame below the grid
     stats_frame = tk.Frame(main_frame)
     stats_frame.pack(pady=10)
             
@@ -226,16 +423,37 @@ def display_sudoku():
     button_frame.pack(pady=10)
         
     def start_solving():
+        # Convert 2D grid to 1D for the bitset solver
+        flat_grid = []
+        for i in range(9):
+            for j in range(9):
+                flat_grid.append(grid[i][j])
+        
         stats['steps'] = 0
         stats['backtracks'] = 0
         start_time = time.time()
-            
-        # Call the solver 
-        solve_sudoku(grid, labels, stats, root)
+        
+        # Initialize candidates and solve using the bitset solver
+        candidates = init_candidates(flat_grid[:])
+        
+        # Call the new solver
+        solve_with_dfs(candidates, flat_grid, labels, stats, root)
+        
+        # Convert back to 2D grid for display
+        for i in range(9):
+            for j in range(9):
+                grid[i][j] = flat_grid[i * 9 + j]
         
         end_time = time.time()
         total_time = end_time - start_time
-        # update time label with total time
+        
+        # Update final display
+        for i in range(9):
+            for j in range(9):
+                labels[i][j].config(text=str(grid[i][j]) if grid[i][j] != 0 else '', 
+                                  fg='blue' if grid[i][j] != 0 else 'black')
+        
+        # Update stats
         time_label.config(text=f"Total Execution Time: {total_time:.2f} seconds")
         steps_label.config(text=f"Total Steps: {stats['steps']}")
         backtracks_label.config(text=f"Total Backtracks: {stats['backtracks']}")
@@ -247,45 +465,59 @@ def display_sudoku():
             
         for i in range(9):
             for j in range(9):
-                value=grid[i][j]
-                labels[i][j].config(text=str(value) if value!=0 else '', fg='black')
+                value = grid[i][j]
+                labels[i][j].config(text=str(value) if value != 0 else '', fg='black')
+        
+        stats['steps'] = 0
+        stats['backtracks'] = 0
+        steps_label.config(text="Steps: 0")
+        backtracks_label.config(text="Backtracks: 0")
+        time_label.config(text="Time: Click Start to Solve")
+        
+    def load_file():
+        f = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv"), ("Text files", "*.txt")])
+        if not f: 
+            return
+        try:
+            puzzle = read_sudoku_from_csv(f)
+            if len(puzzle) != 9:
+                messagebox.showerror("Error", "Invalid Sudoku format - must have 9 rows")
+                return
+            for row in puzzle:
+                if len(row) != 9:
+                    messagebox.showerror("Error", "Invalid Sudoku format - each row must have 9 columns")
+                    return
+            initialise_puzzle(puzzle)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load file: {str(e)}")
+    
+    def reset_puzzle():
+        # Clear the current puzzle
+        for i in range(9):
+            for j in range(9):
+                grid[i][j] = 0
+                labels[i][j].config(text='', fg='black')
         stats['steps'] = 0
         stats['backtracks'] = 0
         steps_label.config(text="Steps: 0")
         backtracks_label.config(text="Backtracks: 0")
         time_label.config(text="Time: Click Start to Solve")
     
-    def reset_puzzle(puzzle=None):
-        if puzzle is None:
-            level=difficulty.get()
-            if level=='Easy':
-                puzzle=read_sudoku_from_csv('sudoku_easy.csv')
-            elif level=='Medium':
-                puzzle=read_sudoku_from_csv('sudoku_medium.csv')
-            elif level=='Hard':
-                puzzle=read_sudoku_from_csv('sudoku_hard.csv')
-        
-        initialise_puzzle(puzzle)
-        
-    #start button
+    # Load file button
+    load_button = tk.Button(button_frame, text="Load File", command=load_file, font=('Arial', 12))
+    load_button.pack(side='left', padx=10)
+
+    # Start button
     start_button = tk.Button(button_frame, text="Start Solving", command=start_solving, font=('Arial', 12))   
     start_button.pack(side='left', padx=10)
-    
-    #reset button
+
+    # Reset button
     reset_button = tk.Button(button_frame, text="Reset Puzzle", command=reset_puzzle, font=('Arial', 12))
     reset_button.pack(side='left', padx=10)
     
-        
-
-    # After solving, update all labels to show the final solution
-    # for i in range(9):
-    #     for j in range(9):
-    #         labels[i][j].config(text=str(grid[i][j]) if grid[i][j] != 0 else '', fg='black')
-    # root.update()
-    
     root.mainloop()
-    
-    
+
 display_sudoku()
 
-        
+
+
