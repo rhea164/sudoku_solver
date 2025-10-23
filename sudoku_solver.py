@@ -9,6 +9,7 @@ from tkinter import filedialog, messagebox
 # --------------------------------------------------------------------------
 
 FULL = 0b111111111 # Each bit has the potential to represent digits 1-9, logic: switching lights ON or OFF
+# EXAMPLE : 0b000010000 means only 5 can go in that cell (5th bit from right is ON)
 N = 9 # Number of rows / columns
 size = N * N # Number of cells
 
@@ -370,6 +371,9 @@ def display_sudoku():
                 if value != 0:
                     entries[i][j].insert(0, str(value)) # Insert the puzzle value in the respective cell
                 entries[i][j].config(fg='black') 
+        
+        reset_button.pack_forget()
+        start_button.pack(side='left', padx=10)
         
         stats['steps'] = 0
         stats['backtracks'] = 0
